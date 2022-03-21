@@ -254,3 +254,44 @@ else
 {
 	Write-Warning "Found no *.nuspec files."
 }
+
+# Put the version/description in the versionMajor, versionMinor and versionBuild elements in the .dtproj (SSIS) project files
+$files = Get-ChildItem $artifactsDirectory -recurse | 
+	Where-Object{ $_.Extension -eq ".dtproj" } | 
+	ForEach-Object { Get-ChildItem -Path $_.FullName -Recurse -include *.dtproj }
+if ($null -ne $files)
+{
+	Write-Verbose "Will apply $NewVersion to $($files.count) files."
+    $vData = [regex]::matches($NewVersion, "\d+")
+    [string]$majorVersion = $vData[0].Value
+    [string]$minorVersion = $vData[1].Value
+    [string]$buildVersion = $vData[2].Value
+    [string]$revision = $vData[3].Value
+	
+	foreach ($file in $files) {	
+		# Read in the file contents, update the version element's value, and save the file. 
+        [xml]$xml = new-object Xml
+        $xml.load($file.FullName)            
+	    $nodes = $xml.Project.DeploymentModelSpecificContent.Manifest.Project.Properties.Property
+        foreach ($node in $nodes)
+        {
+            switch ($node.Name)
+            {
+              "VersionMajor" { $node.InnerXml = $majorVersion}
+              "VersionMinor" { $node.InnerXml = $minorVersion}
+              "VersionBuild" { $node.InnerXml = $buildVersion}
+              "VersionComments" { $node.InnerXml = $Env:BUILD_BUILDNUMBER}
+              "CreationDate" { $node.InnerXml = Get-Date -Format "yyyy-MM-ddTHH:mm:ss.ffffK"}
+              "CreatorName" { $node.InnerXml = $env:Build_RequestedFor}
+              "CreatorComputerName" {$node.InnerXml = $Env:Agent_MachineName}
+            }            
+        }
+        $xml.Save($file.FullName)            
+	    Write-Verbose "$($file.FullName) - version applied"		
+	}
+}
+else
+{
+	Write-Warning "Found no *.dtproj files."
+}
+
